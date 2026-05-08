@@ -20,8 +20,14 @@ export {
     useRef,
     useCallback,
     useAsync,
+    useKeymap,
+    useMotion,
 } from './hooks.js';
-export type { AsyncState } from './hooks.js';
+export type { AsyncState, KeyBinding, MotionPreferences } from './hooks.js';
+
+// ── Error Boundary ──
+export { ErrorBoundary } from './error-boundary.js';
+export type { ErrorBoundaryProps } from './error-boundary.js';
 
 // ── Context ──
 export { createContext, useContext } from './context.js';

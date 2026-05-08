@@ -14,6 +14,7 @@ import {
     createFiber, setCurrentFiber, clearCurrentFiber,
     runEffects, destroyFiber, type Fiber,
 } from './hooks.js';
+import { ErrorBoundary } from './error-boundary.js';
 
 // ── Component instance tracking ──
 
@@ -190,8 +191,33 @@ export function reconcile(vnode: VNode, parentWidget?: Widget): Widget {
     return new Box({ width: 0, height: 0 });
 }
 
+// ── ErrorBoundary helpers ──
+
+/** Walk the fiber parent chain looking for the nearest error boundary */
+function findErrorBoundary(fiber: Fiber): Fiber | undefined {
+    let f: Fiber | undefined = fiber.parent;
+    while (f) {
+        if (f.isErrorBoundary) return f;
+        f = f.parent;
+    }
+    return undefined;
+}
+
+/** Default fallback VNode shown when no ErrorBoundary is present */
+function defaultErrorVNode(err: Error): VNode {
+    return {
+        type: 'box',
+        props: { border: 'single', borderColor: 'red', padding: 1 },
+        children: [
+            { type: 'text', props: { color: 'red', bold: true }, children: ['Error'] },
+            { type: 'text', props: {}, children: [err.message] },
+        ],
+    } as any;
+}
+
 /**
  * Render a functional component — set up fiber, call the function, reconcile output.
+ * Component render errors are caught and routed to the nearest ErrorBoundary.
  */
 function renderComponent(
     component: FC<any>,
@@ -200,6 +226,17 @@ function renderComponent(
 ): Widget {
     const fiber = createFiber(_parentFiber);
 
+    // Mark ErrorBoundary fibers so the error handler can find them
+    if (component === ErrorBoundary) {
+        fiber.isErrorBoundary = true;
+        const fallbackFn = props.fallback as ((err: Error) => VNode) | undefined;
+        const onError = props.onError as ((err: Error) => void) | undefined;
+        fiber.errorFallback = (err: Error) => {
+            onError?.(err);
+            return fallbackFn ? fallbackFn(err) : defaultErrorVNode(err);
+        };
+    }
+
     // Push this fiber as the parent for any child components
     const prevParent = _parentFiber;
     _parentFiber = fiber;
@@ -207,8 +244,23 @@ function renderComponent(
     // Set the current fiber context for hooks
     setCurrentFiber(fiber);
 
-    // Call the component function
-    const vnode = component({ ...props, children: children.length === 1 ? children[0] : children });
+    // Call the component function — catch any render-time errors
+    let vnode: VNode;
+    try {
+        vnode = component({ ...props, children: children.length === 1 ? children[0] : children });
+    } catch (err) {
+        clearCurrentFiber();
+        _parentFiber = prevParent;
+        const error = err instanceof Error ? err : new Error(String(err));
+        const boundary = findErrorBoundary(fiber);
+        if (boundary?.errorFallback) {
+            const fallbackVNode = boundary.errorFallback(error);
+            return reconcile(fallbackVNode);
+        }
+        // No boundary found — show default error widget and log
+        console.error('[TermUI] Unhandled component error:', error);
+        return reconcile(defaultErrorVNode(error));
+    }
 
     clearCurrentFiber();
 

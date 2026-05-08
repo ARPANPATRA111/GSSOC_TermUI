@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────
 
 import type { KeyEvent } from '@termuijs/core';
+import { caps } from '@termuijs/core';
 import { timerPoolSubscribe } from '@termuijs/motion';
 
 // ── Fiber — per-component-instance state ──
@@ -24,6 +25,11 @@ export interface Fiber {
     contextValues: Map<symbol, any>;
     /** Parent fiber for context lookup */
     parent?: Fiber;
+    // ── ErrorBoundary fields ──
+    /** True when this fiber is an ErrorBoundary component */
+    isErrorBoundary?: true;
+    /** Called with the caught error; returns the fallback VNode to render */
+    errorFallback?: (err: Error) => import('./vnode.js').VNode;
 }
 
 interface HookState {
@@ -199,6 +205,87 @@ export function useEffect(effect: () => void | (() => void), deps?: any[]): void
 export function useInput(handler: (key: string, event: KeyEvent) => void): void {
     const fiber = currentFiber();
     fiber.onInput = (event: KeyEvent) => handler(event.key, event);
+}
+
+export interface KeyBinding {
+    key: string;
+    ctrl?: boolean;
+    alt?: boolean;
+    shift?: boolean;
+    action: () => void;
+    description?: string;
+}
+
+/**
+ * useKeymap — declarative keybindings with optional conflict detection.
+ *
+ * ```tsx
+ * useKeymap([
+ *     { key: 'q', action: () => process.exit(0), description: 'Quit' },
+ *     { key: 'r', ctrl: true, action: refresh, description: 'Refresh' },
+ * ]);
+ * ```
+ */
+export function useKeymap(bindings: KeyBinding[]): void {
+    const fiber = currentFiber();
+    const idx = fiber.hookIndex++;
+
+    if (idx >= fiber.hooks.length) {
+        // Dev-mode conflict detection on first render
+        if (process.env.NODE_ENV !== 'production') {
+            const seen = new Map<string, KeyBinding>();
+            for (const b of bindings) {
+                const key = `${b.key}|${b.ctrl ?? false}|${b.alt ?? false}|${b.shift ?? false}`;
+                if (seen.has(key)) {
+                    console.warn(
+                        `[useKeymap] Conflicting keybinding for key "${b.key}" ` +
+                        `(ctrl=${b.ctrl ?? false}, alt=${b.alt ?? false}, shift=${b.shift ?? false})`
+                    );
+                }
+                seen.set(key, b);
+            }
+        }
+        fiber.hooks.push({ value: bindings });
+    } else {
+        fiber.hooks[idx].value = bindings;
+    }
+
+    fiber.onInput = (event: KeyEvent) => {
+        const currentBindings: KeyBinding[] = fiber.hooks[idx].value;
+        for (const b of currentBindings) {
+            if (
+                event.key === b.key &&
+                (b.ctrl ?? false) === (event.ctrl ?? false) &&
+                (b.alt ?? false) === (event.alt ?? false) &&
+                (b.shift ?? false) === (event.shift ?? false)
+            ) {
+                b.action();
+                return;
+            }
+        }
+    };
+}
+
+export interface MotionPreferences {
+    /** True when the user prefers reduced motion (NO_MOTION=1 or CI=true) */
+    reduced: boolean;
+}
+
+/**
+ * useMotion — check if animations should be reduced.
+ *
+ * ```tsx
+ * function AnimatedSpinner() {
+ *     const { reduced } = useMotion();
+ *     if (reduced) return <Text>[loading]</Text>;
+ *     return <Spinner />;
+ * }
+ * ```
+ */
+export function useMotion(): MotionPreferences {
+    // Validate we're inside a component — does NOT consume a hook slot
+    currentFiber();
+    return { reduced: !caps.motion };
 }
 
 /**
