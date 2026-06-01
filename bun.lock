@@ -264,6 +264,7 @@
       "dependencies": {
         "@termuijs/core": "workspace:*",
         "@termuijs/jsx": "workspace:*",
+        "@termuijs/motion": "workspace:*",
         "@termuijs/widgets": "workspace:*",
       },
       "devDependencies": {
@@ -293,6 +294,7 @@
         "@termuijs/widgets": "workspace:*",
       },
       "devDependencies": {
+        "@termuijs/testing": "workspace:*",
         "tsup": "^8.0.0",
         "typescript": "^5.4.0",
       },
@@ -436,6 +438,8 @@
     "@termuijs/example-forms": ["@termuijs/example-forms@workspace:examples/forms-and-validation"],
 
     "@termuijs/example-jsx-dashboard": ["@termuijs/example-jsx-dashboard@workspace:examples/jsx-dashboard"],
+
+    "@termuijs/example-multi-screen-router": ["@termuijs/example-multi-screen-router@workspace:examples/multi-screen-router"],
 
     "@termuijs/example-showcase": ["@termuijs/example-showcase@workspace:examples/showcase"],
 
